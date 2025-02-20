@@ -28,6 +28,7 @@ RESISTOR_VALUE_MAP_ERJ = {
     "60.4Ω": "60R4",
     "1.2kΩ": "1201",
     "180Ω": "1800",
+    "27Ω": "27R0",
 }
 
 RESISTOR_FOOTPRINT_MAP_ERJ = {
@@ -58,6 +59,11 @@ MPN_MAP = {
     "C97521": "W25Q128JVSIQ",
     "X322512MSB4SI": "ECS-2333-120-BN-TR",
     "ERM8-040-05.0-X-DV-L-K-TR": "ERM8-040-05.0-L-DV-L-K-TR",
+    "CR0402-FX-2004GLF": "ERJ-2GEJ205X",
+    "CL21B104KCFNNNE": "CL21B104KCFSFNE",
+    "GRM188R61A106KE69D": "GRT188R61A106KE13J",
+    "2199230-6": "2199230-4",
+    "CL10A226MO7JZNC": "GMC10X5R226M16NT",
 }
 
 
@@ -179,15 +185,23 @@ def search_digikey_info(mpn, order_quantity):
         headers,
         json_data={"Keywords": mpn, "Limit": 2},
     )
+    products = []
     if response["ExactMatches"]:
-        product = response["ExactMatches"][0]
+        products.extend(response["ExactMatches"])
     elif response["Products"]:
-        if len(response["Products"]) > 1:
-            raise Exception(f"Multiple products found for MPN: {mpn}")
-        product = response["Products"][0]
+        products.extend(response["Products"])
     else:
         raise Exception(f"No products found for MPN: {mpn}")
-    return extract_product_info(product, order_quantity)
+    best_data = {"unit_price": float("inf")}
+    for product in products:
+        data = extract_product_info(product, order_quantity)
+        if "unit_price" in data and data["unit_price"] < best_data["unit_price"]:
+            if best_data["unit_price"] != float("inf"):
+                print(
+                    f"Found better price for {mpn}: {data['unit_price']} < {best_data['unit_price']}"
+                )
+            best_data = data
+    return best_data
 
 
 def erj_mpn(value, footprint):
@@ -252,8 +266,9 @@ def parse_capacitor_comment(comment):
 
 
 def parse_bom_row(row, board_quantity):
+    original_mpn = row["LCSC"]
     data = {
-        "mpn": row["LCSC"],
+        "mpn": original_mpn.strip(),
         "designators": row["Designator"],
         "quantity": len(row["Designator"].split(",")),
         "description": row["Comment"],
@@ -280,6 +295,8 @@ def parse_bom_row(row, board_quantity):
         data.update(search_digikey_info(data["mpn"], order_quantity))
     if "unit_price" in data:
         data["total_price"] = data["unit_price"] * order_quantity
+    if original_mpn != data["mpn"]:
+        print(f"Replacing {original_mpn} with {data['mpn']}")
     return data
 
 
